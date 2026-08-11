@@ -1,0 +1,58 @@
+{
+  "name": "@majikah/majik-universal-id-client",
+  "type": "module",
+  "description": "The core universal identity model for the Majikah ecosystem, featuring hybrid PQC signatures (Ed25519 + ML-DSA), ML-KEM-768 private info encryption, and multi-stage Didit verification graduation.",
+  "version": "0.0.17",
+  "license": "Apache-2.0",
+  "author": "Zelijah",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Majikah/majik-universal-id.git"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/jedlsf"
+  },
+  "keywords": [
+    "identity",
+    "did",
+    "sovereign-id",
+    "majikah",
+    "ml-kem",
+    "ml-dsa",
+    "post-quantum-cryptography",
+    "hybrid-signatures",
+    "biometric-verification",
+    "privacy-preserving",
+    "didit",
+    "zero-trust-identity",
+    "pqc"
+  ],
+  "homepage": "https://github.com/Majikah/majik-universal-id#readme",
+  "bugs": {
+    "url": "https://github.com/Majikah/majik-universal-id/issues"
+  },
+  "scripts": {
+    "update": "npm install @majikah/majik-key@latest @majikah/majik-universal-id@latest @majikah/majik-signature@latest @majikah/majik-contact@latest",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build",
+    "package": "npm run build && npm version patch && git push && git push --tags",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@majikah/majik-contact": "^0.0.6",
+    "@majikah/majik-slink": "^0.0.2",
+    "@majikah/majik-universal-id": "^0.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
+  }
+}
