@@ -8,6 +8,10 @@ export * from "./core/crypto/constants";
 export * from "./core/crypto/keystore-manager";
 export * from "./core/utils/utilities";
 
+export * from "@majikah/majik-key";
+
+export { DEFAULT_USER_APP_PREFERENCES } from "./core/client-state-manager";
+
 export * from "./core/storage";
 
 export * from "./core/identity";

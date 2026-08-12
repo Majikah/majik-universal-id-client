@@ -9,12 +9,11 @@ import { MajikContactDirectory } from "./majik-contact-directory";
 import { MajikContactGroupManager } from "./majik-contact-groups";
 import { MAJIK_API_RESPONSE } from "../types";
 import { MajikContactManagerError } from "./errors";
-import { ContactManagerQueryMode, MajikContactManagerJSON } from "./types";
+import { MajikContactManagerJSON } from "./types";
 import {
   arrayBufferToBase64,
   arrayToBase64,
   base64ToArrayBuffer,
-  base64ToUint8Array,
 } from "../utils/utilities";
 import { KEY_ALGO } from "../crypto/constants";
 import { gunzipSync, gzipSync } from "fflate";
@@ -22,8 +21,7 @@ import { MajikContactStorageAdapter } from "../storage/contact-directory/contact
 import { MajikContactGroupStorageAdapter } from "../storage/contact-directory/groups/_types";
 import { InMemoryContactAdapter } from "../storage/contact-directory/contacts/adapter-memory";
 import { InMemoryContactGroupAdapter } from "../storage/contact-directory/groups/adapter-memory";
-import { MajikRecipient, MajikEnvelope } from "@majikah/majik-envelope";
-import { ExpectedSigner } from "@majikah/majik-signature";
+import { MajikKeyAddress } from "@majikah/majik-key";
 
 // ---------------------------------------------------------------------------
 // MajikContactManager
@@ -272,10 +270,10 @@ export class MajikContactManager {
     return this.directory.getContactByFingerprint(fingerprint);
   }
 
-  async getContactByPublicKeyBase64(
-    publicKeyBase64: string,
+  async getContactByAddress(
+    address: MajikKeyAddress,
   ): Promise<MajikContact | undefined> {
-    return await this.directory.getContactByPublicKeyBase64(publicKeyBase64);
+    return await this.directory.getContactByAddress(address);
   }
 
   getContactsByIds(ids: string[], strict = false): MajikContact[] {
@@ -313,7 +311,7 @@ export class MajikContactManager {
 
     const contacts = await Promise.all(
       uniqueKeys.map(async (key) => {
-        const contact = await this.directory.getContactByPublicKeyBase64(key);
+        const contact = await this.directory.getContactByAddress(key);
 
         if (!contact && strict) {
           throw new MajikContactManagerError(
@@ -328,106 +326,6 @@ export class MajikContactManager {
     return contacts.filter((c): c is MajikContact => Boolean(c));
   }
 
-  async getMajikRecipients(
-    mode: ContactManagerQueryMode = "id",
-    input: string[],
-    strict?: boolean,
-  ): Promise<MajikRecipient[]> {
-    if (!input?.length)
-      throw new MajikContactManagerError("At least 1 id/key is required");
-
-    const contacts =
-      mode === "public_key"
-        ? await this.getContactsByPublicKeys(input, strict)
-        : this.getContactsByIds(input, strict);
-
-    if (!contacts || contacts.length === 0) return [];
-
-    const recipients: MajikRecipient[] = [];
-    const seen = new Set<string>();
-    const invalidContacts: string[] = [];
-
-    for (const contact of contacts) {
-      if (!contact) continue;
-
-      // dedupe by fingerprint
-      if (seen.has(contact.fingerprint)) continue;
-
-      const mlPubKey = base64ToUint8Array(contact.mlKey);
-
-      if (!mlPubKey) {
-        invalidContacts.push(contact.fingerprint);
-        continue;
-      }
-
-      const builtMajikRecipient =
-        await MajikEnvelope.buildMajikRecipientFromContact(contact);
-
-      recipients.push(builtMajikRecipient);
-
-      seen.add(contact.fingerprint);
-    }
-
-    if (invalidContacts.length > 0) {
-      throw new MajikContactManagerError(
-        `Invalid ML-KEM public key for contact(s): ${invalidContacts.join(", ")}`,
-      );
-    }
-
-    return recipients;
-  }
-
-  async getExpectedSigners(
-    mode: ContactManagerQueryMode = "id",
-    input: string[],
-    strict?: boolean,
-  ): Promise<ExpectedSigner[]> {
-    if (!input?.length)
-      throw new MajikContactManagerError("At least 1 id/key is required");
-
-    const contacts =
-      mode === "public_key"
-        ? await this.getContactsByPublicKeys(input, strict)
-        : this.getContactsByIds(input, strict);
-    if (!contacts || contacts.length === 0) return [];
-
-    const signers: ExpectedSigner[] = [];
-    const seen = new Set<string>();
-    const invalidContacts: string[] = [];
-
-    for (const contact of contacts) {
-      if (!contact) continue;
-
-      // dedupe by fingerprint
-      if (seen.has(contact.fingerprint)) continue;
-
-      const mlDsaPublicKey = contact.mlDsaPublicKeyBase64;
-
-      if (!mlDsaPublicKey?.trim()) {
-        invalidContacts.push(contact.fingerprint);
-        continue;
-      }
-
-      const expectedSigner: ExpectedSigner = {
-        edPublicKey: contact.edPublicKeyBase64,
-        mlDsaPublicKey: contact.mlDsaPublicKeyBase64,
-        signerId: contact.fingerprint,
-      };
-
-      signers.push(expectedSigner);
-
-      seen.add(contact.fingerprint);
-    }
-
-    if (invalidContacts.length > 0) {
-      throw new MajikContactManagerError(
-        `Invalid ML-KEM public key for contact(s): ${invalidContacts.join(", ")}`,
-      );
-    }
-
-    return signers;
-  }
-
   hasContact(id: string): boolean {
     return this.directory.hasContact(id);
   }
@@ -436,8 +334,8 @@ export class MajikContactManager {
     return this.directory.hasFingerprint(fingerprint);
   }
 
-  async hasContactByPublicKeyBase64(publicKeyBase64: string): Promise<boolean> {
-    return this.directory.hasContactByPublicKeyBase64(publicKeyBase64);
+  async hasContactByAddress(address: MajikKeyAddress): Promise<boolean> {
+    return this.directory.hasContactByAddress(address);
   }
 
   listContacts(sortedByLabel = false, majikahOnly = false): MajikContact[] {

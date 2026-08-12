@@ -8,6 +8,7 @@
  * adapter only moves bytes.
  */
 
+import { BASE_CLIENT_STATE_KEYS } from "@majikah/majik-key-client";
 import { MajikStorageAdapter } from "../storage-adapter";
 
 // ---------------------------------------------------------------------------
@@ -28,22 +29,60 @@ export interface ClientStateEntry {
 // ---------------------------------------------------------------------------
 
 export const CLIENT_STATE_KEYS = {
-  ACCOUNT_ORDER: "user_account_order",
-  // INVOICE_DEFAULTS: "invoice_defaults",
+  ...BASE_CLIENT_STATE_KEYS,
+  USER_APP_PREFERENCES: "user_app_preferences",
 } as const;
 
 export type ClientStateKey =
   (typeof CLIENT_STATE_KEYS)[keyof typeof CLIENT_STATE_KEYS];
 
-// ---------------------------------------------------------------------------
-// Typed value shapes
-// ---------------------------------------------------------------------------
-
 /**
- * Ordered list of own account IDs. The head of the array is the active
- * account. Stored as a JSON array: `["id1", "id2", ...]`.
+ * User-configured app-wide preferences.
  */
-export type AccountOrderValue = string[];
+export interface UserAppPreferences {
+  general: GeneralPreferences;
+  privacy: PrivacyPreferences;
+  security: SecurityPreferences;
+}
+
+export interface GeneralPreferences {
+  history?: HistoryPreferences;
+}
+
+export interface HistoryPreferences {
+  enabled?: boolean;
+  maxCount?: number;
+}
+
+export interface SigningPreferences {
+  autoSeal?: boolean;
+  defaultToTSA?: boolean;
+  defaultToDetached?: boolean;
+  autosave?: {
+    afterSign?: AutosavePreferences;
+    afterSeal?: AutosavePreferences;
+    afterNotary?: AutosavePreferences;
+  };
+}
+
+export interface AutosavePreferences {
+  enabled?: boolean;
+  defaultPath?: string;
+}
+
+export interface PrivacyPreferences {
+  shareAnalytics?: boolean;
+}
+
+export interface SecurityPreferences {
+  key?: KeyPreferences;
+}
+
+export interface KeyPreferences {
+  autoLockOnMinimize?: boolean;
+  autoLockInterval?: number;
+  onetimeUnlock?: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Adapter interface

@@ -1,20 +1,4 @@
 
-export type ISODateString = string;
-
-export type MajikMessageAccountID = string;
-
-export type MajikMessagePublicKey = string;
-
-export type MajikMessageChatID = string;
-
-export type MajikMessageThreadID = string;
-export type MajikMessageMailID = string;
-
-export interface MAJIK_API_RESPONSE {
-  success: boolean;
-  message: string;
-  code?: string;
-}
 /**
  * types.ts — @majikah/majik-envelope
  *
@@ -71,49 +55,10 @@ export function isGroupPayload(p: EnvelopePayload): p is GroupPayload {
   return "keys" in p && Array.isArray((p as GroupPayload).keys);
 }
 
-// ─── MajikEnvelope JSON ───────────────────────────────────────────────────────
-
-export interface MajikEnvelopeJSON {
-  version: 3;
-  fingerprint: string;
-  payload: EnvelopePayload;
-  plaintext?: string; // present only after successful decryption
-}
-
 // ─── Shared API Types ─────────────────────────────────────────────────────────
 
 export interface MAJIK_API_RESPONSE {
   success: boolean;
   message: string;
   data?: unknown;
-}
-
-export interface MnemonicJSON {
-  id: string;
-  seed: string[];
-  phrase?: string;
-}
-
-export interface MajikKeyJSON {
-  id: string;
-  label: string;
-  publicKey: string;
-  fingerprint: string;
-  encryptedPrivateKey: string;
-  salt: string;
-  backup: string;
-  timestamp: string;
-  kdfVersion: number;
-  mlKemPublicKey?: string;
-  encryptedMlKemSecretKey?: string;
-}
-
-export interface MajikKeyMetadata {
-  id: string;
-  fingerprint: string;
-  label: string;
-  timestamp: Date;
-  isLocked: boolean;
-  kdfVersion: number;
-  hasMlKem: boolean;
 }

@@ -13,7 +13,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Majikah/majik-universal-id.git"
+    "url": "git+https://github.com/Majikah/majik-universal-id-client.git"
   },
   "funding": {
     "type": "github",
@@ -34,9 +34,9 @@
     "zero-trust-identity",
     "pqc"
   ],
-  "homepage": "https://github.com/Majikah/majik-universal-id#readme",
+  "homepage": "https://github.com/Majikah/majik-universal-id-client#readme",
   "bugs": {
-    "url": "https://github.com/Majikah/majik-universal-id/issues"
+    "url": "https://github.com/Majikah/majik-universal-id-client/issues"
   },
   "scripts": {
     "update": "npm install @majikah/majik-key@latest @majikah/majik-universal-id@latest @majikah/majik-signature@latest @majikah/majik-contact@latest",
@@ -49,10 +49,13 @@
   },
   "dependencies": {
     "@majikah/majik-contact": "^0.0.6",
-    "@majikah/majik-slink": "^0.0.2",
-    "@majikah/majik-universal-id": "^0.0.15"
+    "@majikah/majik-key": "^0.3.4",
+    "@majikah/majik-key-client": "^0.1.8",
+    "@majikah/majik-signature": "^0.2.8",
+    "@majikah/majik-slink": "^0.1.0",
+    "@majikah/majik-universal-id": "^0.2.1"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0"
+    "@types/node": "^26.2.0"
   }
 }

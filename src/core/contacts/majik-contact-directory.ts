@@ -8,6 +8,7 @@ import {
 } from "@majikah/majik-contact";
 import { MajikContactDirectoryError } from "./errors";
 import { MajikContactDirectoryData } from "./types";
+import { MajikKeyAddress } from "@majikah/majik-key";
 
 /* -------------------------------
  * MajikContactDirectory Class
@@ -37,9 +38,6 @@ export class MajikContactDirectory {
       throw new MajikContactDirectoryError("Invalid contact");
     }
 
-    if (!(contact instanceof MajikContact)) {
-      throw new MajikContactDirectoryError("Invalid contact instance");
-    }
     if (this.contacts.has(contact.id)) {
       throw new MajikContactDirectoryError(
         `Contact with id "${contact.id}" already exists`,
@@ -108,18 +106,18 @@ export class MajikContactDirectory {
    * Get contact by public key (base64)
    * Uses MajikContact.getPublicKeyBase64() for canonical comparison
    */
-  async getContactByPublicKeyBase64(
-    publicKeyBase64: string,
+  async getContactByAddress(
+    address: MajikKeyAddress,
   ): Promise<MajikContact | undefined> {
-    if (!publicKeyBase64 || typeof publicKeyBase64 !== "string") {
+    if (!address || typeof address !== "string") {
       throw new MajikContactDirectoryError(
-        "Public key must be a non-empty base64 string",
+        "Public key must be a non-empty base64 MajikKeyAddress",
       );
     }
 
     for (const contact of this.contacts.values()) {
       const contactKey = await contact.getPublicKeyBase64();
-      if (contactKey === publicKeyBase64) {
+      if (contactKey === address) {
         return contact;
       }
     }
@@ -172,14 +170,14 @@ export class MajikContactDirectory {
   /**
    * Checks if a contact exists by their public key (base64)
    */
-  async hasContactByPublicKeyBase64(publicKeyBase64: string): Promise<boolean> {
-    if (!publicKeyBase64 || typeof publicKeyBase64 !== "string") {
+  async hasContactByAddress(address: MajikKeyAddress): Promise<boolean> {
+    if (!address || typeof address !== "string") {
       throw new MajikContactDirectoryError(
-        "Public key must be a non-empty base64 string",
+        "Public key must be a non-empty base64 MajikKeyAddress",
       );
     }
 
-    const contact = await this.getContactByPublicKeyBase64(publicKeyBase64);
+    const contact = await this.getContactByAddress(address);
     return contact !== undefined;
   }
 
