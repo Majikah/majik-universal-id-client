@@ -2,7 +2,7 @@
   "name": "@majikah/majik-universal-id-client",
   "type": "module",
   "description": "The core universal identity model for the Majikah ecosystem, featuring hybrid PQC signatures (Ed25519 + ML-DSA), ML-KEM-768 private info encryption, and multi-stage Didit verification graduation.",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "license": "Apache-2.0",
   "author": "Zelijah",
   "main": "./dist/index.js",
