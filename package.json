@@ -39,7 +39,7 @@
     "url": "https://github.com/Majikah/majik-universal-id-client/issues"
   },
   "scripts": {
-    "update": "npm install @majikah/majik-key@latest @majikah/majik-universal-id@latest @majikah/majik-signature@latest @majikah/majik-contact@latest",
+    "update": "npm install @majikah/majik-key@latest @majikah/majik-key-client@latest @majikah/majik-universal-id@latest @majikah/majik-signature@latest @majikah/majik-contact@latest @majikah/majik-slink@latest",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build",
@@ -49,11 +49,11 @@
   },
   "dependencies": {
     "@majikah/majik-contact": "^0.0.6",
-    "@majikah/majik-key": "^0.3.4",
-    "@majikah/majik-key-client": "^0.1.8",
-    "@majikah/majik-signature": "^0.2.8",
-    "@majikah/majik-slink": "^0.1.0",
-    "@majikah/majik-universal-id": "^0.2.4"
+    "@majikah/majik-key": "^0.4.0",
+    "@majikah/majik-key-client": "^0.2.0",
+    "@majikah/majik-signature": "^0.3.0",
+    "@majikah/majik-slink": "^0.2.0",
+    "@majikah/majik-universal-id": "^0.3.0"
   },
   "devDependencies": {
     "@types/node": "^26.2.0"
