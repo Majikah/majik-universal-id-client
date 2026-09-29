@@ -1,26 +1,10 @@
+import { SQLiteTransport } from "./sqlite-transport";
+
 export class SQLiteDatabase {
-  constructor(private worker: Worker) {}
+  constructor(private transport: SQLiteTransport) {}
 
   private call(message: any): Promise<any> {
-    const id = crypto.randomUUID();
-
-    return new Promise((resolve, reject) => {
-      const handler = (e: MessageEvent) => {
-        if (e.data.id !== id) return;
-
-        this.worker.removeEventListener("message", handler);
-
-        if (e.data.ok) resolve(e.data.result);
-        else reject(new Error(e.data.error));
-      };
-
-      this.worker.addEventListener("message", handler);
-
-      this.worker.postMessage({
-        ...message,
-        id,
-      });
-    });
+    return this.transport.send(message);
   }
 
   async run(sql: string, params: any[] = []): Promise<void> {

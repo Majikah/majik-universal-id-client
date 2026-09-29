@@ -13,7 +13,12 @@ import {
   type SerializedMajikContact,
 } from "@majikah/majik-contact";
 
-import { MajikSignature } from "@majikah/majik-signature";
+import {
+  EnvelopeInput,
+  FileLike,
+  MajikSignature,
+  MajikTimestamp,
+} from "@majikah/majik-signature";
 import {
   ExpectedSigner,
   MajikSignatureEnvelope,
@@ -563,41 +568,18 @@ export class MajikUniversalIdClient extends MajikKeyClient<
   // ── Signing ───────────────────────────────────────────────────────────────
 
   /**
-   * Sign content with the active account.
-   *
-   * The active account must be unlocked and have signing keys.
-   * Use unlockAccount() first if needed.
-   *
-   * @param content     - Raw bytes or UTF-8 string to sign
-   * @param options     - Optional content type and timestamp override
-   * @param accountId   - Override which account signs. Defaults to active account.
+   * Creates a cryptographic signature for text or raw bytes using a selected signing account. The selected account must have usable signing keys and be unlocked when the underlying operation requires private-key access.
+   * @param content - Content to process, supplied as text or raw bytes.
+   * @param options - Optional operation-specific settings.
+   * @param accountId - Account identifier to use. When omitted, the currently active account is used where supported.
+   * @returns The result of the sign operation (`Promise<SignResult>`).
    */
   async sign(
     content: Uint8Array | string,
     options?: SignOptions,
     accountId?: string,
   ): Promise<SignResult> {
-    try {
-      const id = accountId ?? this.getActiveAccount()?.id;
-      if (!id)
-        throw new Error("No active account — call setActiveAccount() first");
-
-      const key = this._keys.get(id);
-      if (!key) throw new Error(`Account not found in keystore: "${id}"`);
-
-      if (key.isLocked) {
-        throw new Error(
-          `Account "${id}" is locked. Call unlockAccount() before signing.`,
-        );
-      }
-
-      if (!key.hasSigningKeys) {
-        throw new Error(
-          `Account "${id}" has no signing keys. ` +
-            `Re-import via importAccountFromMnemonicBackup() to enable signing.`,
-        );
-      }
-
+    return this._withSigningKey(accountId, "sign", async (key) => {
       const signature = await MajikSignature.sign(content, key, options);
 
       const result: SignResult = {
@@ -610,15 +592,16 @@ export class MajikUniversalIdClient extends MajikKeyClient<
 
       this._emit("sign", result);
       return result;
-    } catch (err) {
-      this._emit("error", err, { context: "sign" });
-      throw err;
-    }
+    });
   }
 
   /**
    * Sign content and immediately serialize to a base64 string.
    * Convenience wrapper around sign() + serialize().
+   * @param content - Content to process, supplied as text or raw bytes.
+   * @param options - Optional operation-specific settings.
+   * @param accountId - Account identifier to use. When omitted, the currently active account is used where supported.
+   * @returns The result of the sign and serialize operation (`Promise<string>`).
    */
   async signAndSerialize(
     content: Uint8Array | string,
@@ -632,6 +615,10 @@ export class MajikUniversalIdClient extends MajikKeyClient<
   /**
    * Sign content and return the full JSON envelope.
    * Convenience wrapper around sign() + toJSON().
+   * @param content - Content to process, supplied as text or raw bytes.
+   * @param options - Optional operation-specific settings.
+   * @param accountId - Account identifier to use. When omitted, the currently active account is used where supported.
+   * @returns The result of the sign to j s o n operation (`Promise<MajikSignatureJSON>`).
    */
   async signToJSON(
     content: Uint8Array | string,
@@ -655,13 +642,17 @@ export class MajikUniversalIdClient extends MajikKeyClient<
    * @param content     - The original content that was signed
    * @param signature   - MajikSignature instance, JSON object, or base64 string
    * @param publicKeys  - Optional. If omitted, public keys are extracted from
-   *                      the envelope (self-reported — cross-check signerId
-   *                      against a trusted source for full security).
+   *                        the envelope (self-reported — cross-check signerId
+   *                        against a trusted source for full security).
+   * @param now - Optional point-in-time used when evaluating temporal validity; defaults to the current time when omitted.
+   * @returns The result of the verify operation (`VerifyResult`).
+   * @throws {Error} When validation fails, required local data is unavailable, or the underlying operation cannot be completed.
    */
   verify(
     content: Uint8Array | string,
     signature: MajikSignature | MajikSignatureJSON | string,
     publicKeys?: MajikSignerPublicKeys,
+    now?: Date,
   ): VerifyResult {
     try {
       // Deserialize if base64 string
@@ -681,7 +672,7 @@ export class MajikUniversalIdClient extends MajikKeyClient<
               sig as MajikSignatureJSON,
             ).extractPublicKeys());
 
-      const result = MajikSignature.verify(content, sig, keys);
+      const result = MajikSignature.verify(content, sig, keys, now);
 
       const verifyResult: VerifyResult = {
         ...result,
@@ -702,11 +693,18 @@ export class MajikUniversalIdClient extends MajikKeyClient<
    * Verify against a specific known MajikKey account.
    * Automatically extracts public keys from the key client.
    * Works on locked accounts — only public key fields are used.
+   * @param content - Content to process, supplied as text or raw bytes.
+   * @param signature - Signature value, supplied as a MajikSignature, JSON representation, or serialized string as supported by the method.
+   * @param accountId - Account identifier to use. When omitted, the currently active account is used where supported.
+   * @param now - Optional point-in-time used when evaluating temporal validity; defaults to the current time when omitted.
+   * @returns The result of the verify with account operation (`VerifyResult`).
+   * @throws {Error} When validation fails, required local data is unavailable, or the underlying operation cannot be completed.
    */
   verifyWithAccount(
     content: Uint8Array | string,
     signature: MajikSignature | MajikSignatureJSON | string,
     accountId: string,
+    now?: Date,
   ): VerifyResult {
     const key = this._keys.get(accountId);
     if (!key) throw new Error(`Account not found: "${accountId}"`);
@@ -719,17 +717,25 @@ export class MajikUniversalIdClient extends MajikKeyClient<
     }
 
     const publicKeys = MajikSignature.publicKeysFromMajikKey(key);
-    return this.verify(content, signature, publicKeys);
+    return this.verify(content, signature, publicKeys, now);
   }
 
   /**
    * Verify against a contact from the directory by their ID.
    * Useful when you have the signer's contact card stored locally.
+   * @param content - Content to process, supplied as text or raw bytes.
+   * @param signature - Signature value, supplied as a MajikSignature, JSON representation, or serialized string as supported by the method.
+   * @param contactId - Contact identifier used to resolve and trust a signer.
+   * @param now - Optional point-in-time used when evaluating temporal validity; defaults to the current time when omitted.
+   * @returns The result of the verify with contact operation (`Promise<VerifyResult>`).
+   * @throws {Error} When validation fails, required local data is unavailable, or the underlying operation cannot be completed.
    */
   async verifyWithContact(
     content: Uint8Array | string,
     signature: MajikSignature | MajikSignatureJSON | string,
     contactId: string,
+
+    now?: Date,
   ): Promise<VerifyResult> {
     const contact = this._contacts.getContact(contactId);
     if (!contact) throw new Error(`Contact not found: "${contactId}"`);
@@ -760,42 +766,42 @@ export class MajikUniversalIdClient extends MajikKeyClient<
             ? sig.timestamp
             : (sig as MajikSignatureJSON).timestamp,
         signerLabel: this.resolveSignerLabel(envelopeSignerId),
+        reason: "Signer does not match contact",
       };
       this._emit("verify", result);
       return result;
     }
 
-    const edPublicKeyBase64 =
-      sig instanceof MajikSignature
-        ? sig.signerEdPublicKey
-        : (sig as MajikSignatureJSON).signerEdPublicKey;
-
-    const mlDsaPublicKeyBase64 =
-      sig instanceof MajikSignature
-        ? sig.signerMlDsaPublicKey
-        : (sig as MajikSignatureJSON).signerMlDsaPublicKey;
-
+    if (!contact.edPublicKeyBase64 || !contact.mlDsaPublicKeyBase64) {
+      throw new Error(`Contact "${contactId}" has no signing public keys.`);
+    }
     const publicKeys: MajikSignerPublicKeys = {
       signerId: contact.fingerprint,
-      edPublicKey: base64ToUint8Array(edPublicKeyBase64),
-      mlDsaPublicKey: base64ToUint8Array(mlDsaPublicKeyBase64),
+      edPublicKey: base64ToUint8Array(contact.edPublicKeyBase64),
+      mlDsaPublicKey: base64ToUint8Array(contact.mlDsaPublicKeyBase64),
     };
 
-    return this.verify(content, sig, publicKeys);
+    return this.verify(content, sig, publicKeys, now);
   }
 
   /**
    * Batch verify multiple signatures against the same content.
    * Returns one VerifyResult per signature in the same order.
+   * @param content - Content to process, supplied as text or raw bytes.
+   * @param signatures - Collection of signatures to verify or process.
+   * @param publicKeys - Collection of public keys used to resolve contacts or verify signatures.
+   * @param now - Optional point-in-time used when evaluating temporal validity; defaults to the current time when omitted.
+   * @returns The result of the verify batch operation (`VerifyResult[]`).
    */
   verifyBatch(
     content: Uint8Array | string,
     signatures: Array<MajikSignature | MajikSignatureJSON | string>,
     publicKeys?: MajikSignerPublicKeys,
+    now?: Date,
   ): VerifyResult[] {
     return signatures.map((sig) => {
       try {
-        return this.verify(content, sig, publicKeys);
+        return this.verify(content, sig, publicKeys, now);
       } catch (err) {
         this._emit("error", err, { context: "verifyBatch" });
         return {
@@ -808,7 +814,6 @@ export class MajikUniversalIdClient extends MajikKeyClient<
       }
     });
   }
-
   // ── Text / Detached Signing ───────────────────────────────────────────────────
 
   /**
@@ -905,24 +910,20 @@ export class MajikUniversalIdClient extends MajikKeyClient<
 
     return this.verifyContent(text, sig, options);
   }
-
   /**
    * Verify content against a base64-serialized detached signature string.
    *
-   * This is the pair to signAndDetach() — designed for call-sites that retrieve
-   * a stored base64 signature from a database or API and want to verify without
-   * importing MajikSignature themselves.
-   *
-   * The signer can be identified by contact ID, raw public key base64, or a
-   * MajikKey. If none is provided, self-reported keys from the envelope are used
-   * (see security note on verifyContent).
-   *
    * @example
-   *   const row = await db.findOne({ doc_id });
-   *   const result = await majik.verifyDetached(docBytes, row.signature, {
-   *     contactId: row.signer_contact_id,
-   *   });
-   *   if (result.valid) console.log("Signed by", result.signerId);
+   *     const row = await db.findOne({ doc_id });
+   *     const result = await majik.verifyDetached(docBytes, row.signature, {
+   *       contactId: row.signer_contact_id,
+   *     });
+   *     if (result.valid) console.log("Signed by", result.signerId);
+   * @param content - Content to process, supplied as text or raw bytes.
+   * @param serializedSignature - Detached serialized signature to parse and verify.
+   * @param options - Optional operation-specific settings.
+   * @returns The result of the verify detached operation (`Promise<VerificationResult>`).
+   * @throws {Error} When validation fails, required local data is unavailable, or the underlying operation cannot be completed.
    */
   async verifyDetached(
     content: Uint8Array | string,
@@ -932,6 +933,7 @@ export class MajikUniversalIdClient extends MajikKeyClient<
       publicKeyBase64?: string;
       key?: MajikKey;
       expectedSignerId?: string;
+      now?: Date;
     },
   ): Promise<VerificationResult> {
     if (!serializedSignature?.trim()) {
@@ -955,7 +957,9 @@ export class MajikUniversalIdClient extends MajikKeyClient<
       }
     }
 
-    return this.verifyContent(content, sig, options);
+    const verifyResult = await this.verifyContent(content, sig, options);
+
+    return verifyResult;
   }
 
   // ── Signature Serialization Helpers ──────────────────────────────────────────
@@ -1056,13 +1060,12 @@ export class MajikUniversalIdClient extends MajikKeyClient<
   /**
    * Sign raw bytes or a string using the active account.
    *
-   * The active account is unlocked automatically if needed.
-   * This is the MajikMessage equivalent of MajikSignature.sign() — it resolves
-   * the signing key from the keystore so you don't have to manage it yourself.
-   *
    * @example
-   *   const sig = await majik.signContent(documentBytes, { contentType: "application/pdf" });
-   *   const b64 = sig.serialize(); // store alongside the document
+   *     const sig = await majik.signContent(documentBytes, { contentType: "application/pdf" });
+   *     const b64 = sig.serialize(); // store alongside the document
+   * @param content - Content to process, supplied as text or raw bytes.
+   * @param options - Optional operation-specific settings.
+   * @returns The result of the sign content operation (`Promise<MajikSignature>`).
    */
   async signContent(
     content: Uint8Array | string,
@@ -1070,101 +1073,128 @@ export class MajikUniversalIdClient extends MajikKeyClient<
       contentType?: string;
       timestamp?: string;
       accountId?: string;
+      validUntil?: string;
     },
   ): Promise<MajikSignature> {
-    const id = options?.accountId ?? this.getActiveAccount()?.id;
-    if (!id)
-      throw new Error("No active account — call setActiveAccount() first");
-
-    try {
-      await this._keys.ensureUnlocked(id);
-      const key = this._keys.get(id);
-      if (!key) throw new Error(`Account not found in keystore: "${id}"`);
-      if (!key.hasSigningKeys) {
-        throw new Error(
-          `Account "${id}" has no signing keys. ` +
-            `Re-import via importAccountFromMnemonicBackup() to enable signing.`,
-        );
-      }
-
-      return MajikSignature.sign(content, key, {
+    const { signature } = await this.sign(
+      content,
+      {
         contentType: options?.contentType,
         timestamp: options?.timestamp,
-      });
-    } catch (err) {
-      this._emit("error", err, { context: "signContent" });
-      throw err;
-    }
+        validUntil: options?.validUntil,
+      },
+      options?.accountId,
+    );
+    return signature;
   }
 
   /**
    * Sign a file and embed the signature directly into it using the active account.
    *
    * @example
-   *   const { blob: signedPdf } = await majik.signFile(pdfBlob);
+   *     const { blob: signedPdf } = await majik.signFile(pdfBlob);
    *
    * @example — non-active account
-   *   const { blob } = await majik.signFile(wavBlob, { accountId: "acc_xyz" });
+   *     const { blob } = await majik.signFile(wavBlob, { accountId: "acc_xyz" });
+   * @param file - Input file or Blob-like value to sign, verify, inspect, or transform.
+   * @param options - Optional operation-specific settings.
+   * @returns The result of the sign file operation (`Promise<Awaited<ReturnType<typeof MajikSignature.signFile>>>`).
    */
+
   async signFile(
-    file: Blob,
+    file: FileLike,
     options?: {
       contentType?: string;
       timestamp?: string;
       mimeType?: string;
       accountId?: string;
       expectedSigners?: ExpectedSigner[];
+      validUntil?: string;
+      /** Pre-stamp original, when the current file's embedded envelope was
+       *  destroyed by a wholesale re-encode (PDF flatten, image re-render,
+       *  audio re-mux). Lets the prior signature chain be recovered. */
+      priorSignedFile?: Blob;
+      /** Optional note attached to this specific revision. */
+      message?: string;
     },
-  ): Promise<ReturnType<typeof MajikSignature.signFile>> {
-    const id = options?.accountId ?? this.getActiveAccount()?.id;
-    if (!id)
-      throw new Error("No active account — call setActiveAccount() first");
-
-    let key: ReturnType<typeof this._keys.get> | undefined;
-    let shouldRelock = false;
-
-    try {
-      await this._keys.ensureUnlocked(id);
-      key = this._keys.get(id);
-      if (!key) throw new Error(`Account not found in keystore: "${id}"`);
-      if (!key.hasSigningKeys) {
-        throw new Error(
-          `Account "${id}" has no signing keys. ` +
-            `Re-import via importAccountFromMnemonicBackup() to enable signing.`,
-        );
-      }
-
-      shouldRelock = !(await this.isOnetimeUnlockEnabled());
-
+  ): Promise<Awaited<ReturnType<typeof MajikSignature.signFile>>> {
+    return this._withSigningKey(options?.accountId, "signFile", async (key) => {
       const signedResponse = await MajikSignature.signFile(file, key, {
         contentType: options?.contentType,
         timestamp: options?.timestamp,
         mimeType: options?.mimeType,
         expectedSigners: options?.expectedSigners,
+        validUntil: options?.validUntil,
+        priorSignedFile: options?.priorSignedFile,
+        message: options?.message,
       });
 
+      const signedBytes = new Uint8Array(
+        await signedResponse.blob.arrayBuffer(),
+      );
+
       return signedResponse;
-    } catch (err) {
-      this._emit("error", err, { context: "signFile" });
-      throw err;
-    } finally {
-      if (shouldRelock) key?.lock();
-    }
+    });
   }
 
   /**
-   * Sign multiple file blobs with the active (or specified) account in one call.
+   * Sign a file with a detached signature envelope.
    *
    * @example
-   *   const results = await majik.batchSignFiles([
-   *     { file: pdfBlob, contentType: "application/pdf" },
-   *     { file: wavBlob, contentType: "audio/wav" },
-   *     { file: mp4Blob, contentType: "video/mp4" },
-   *   ]);
-   *   for (const r of results) {
-   *     if (r.error) console.error("Failed:", r.error.message);
-   *     else await r2.put(key, await r.blob!.arrayBuffer());
-   *   }
+   *     const { blob: signedPdf } = await majik.signFileDetached(pdfBlob);
+   *
+   * @example — non-active account
+   *     const { blob } = await majik.signFileDetached(wavBlob, { accountId: "acc_xyz" });
+   * @param file - Input file or Blob-like value to sign, verify, inspect, or transform.
+   * @param options - Optional operation-specific settings.
+   * @returns The result of the sign file detached operation (`Promise<Awaited<ReturnType<typeof MajikSignature.signFileDetached>>>`).
+   */
+
+  async signFileDetached(
+    file: FileLike,
+    options?: {
+      contentType?: string;
+      timestamp?: string;
+      mimeType?: string;
+      accountId?: string;
+      expectedSigners?: ExpectedSigner[];
+      validUntil?: string;
+      existingEnvelope?: EnvelopeInput;
+      tsa?: MajikTimestamp;
+    },
+  ): Promise<Awaited<ReturnType<typeof MajikSignature.signFileDetached>>> {
+    return this._withSigningKey(
+      options?.accountId,
+      "signFileDetached",
+      async (key) => {
+        const signedResponse = await MajikSignature.signFileDetached(
+          file,
+          key,
+          {
+            contentType: options?.contentType,
+            timestamp: options?.timestamp,
+            mimeType: options?.mimeType,
+            expectedSigners: options?.expectedSigners,
+            existingEnvelope: options?.existingEnvelope,
+            tsa: options?.tsa,
+            validUntil: options?.validUntil,
+          },
+        );
+
+        const envelopeBytes = signedResponse.envelope.toMJKSIGBytes();
+
+        return signedResponse;
+      },
+    );
+  }
+
+  /**
+   * Sign multiple files with one account in a single unlock.
+   * Per-file failures are returned in `error`, not thrown; unlock/key failures
+   * (no account, no signing keys) still throw, as before.
+   * @param files - Collection of files to process as a batch.
+   * @param options - Optional operation-specific settings.
+   * @returns The result of the batch sign files operation (`Promise< Array<{ blob: Blob | null; signature: MajikSignature | null; serialized: string | null; handler: string | null; mimeType: string | null; error: Error | null; }> >`).
    */
   async batchSignFiles(
     files: Array<{
@@ -1172,6 +1202,7 @@ export class MajikUniversalIdClient extends MajikKeyClient<
       contentType?: string;
       timestamp?: string;
       mimeType?: string;
+      validUntil?: string;
     }>,
     options?: { accountId?: string },
   ): Promise<
@@ -1184,49 +1215,40 @@ export class MajikUniversalIdClient extends MajikKeyClient<
       error: Error | null;
     }>
   > {
-    const id = options?.accountId ?? this.getActiveAccount()?.id;
-    if (!id)
-      throw new Error("No active account — call setActiveAccount() first");
+    return this._withSigningKey(options?.accountId, "batchSignFiles", (key) =>
+      Promise.all(
+        files.map(
+          async ({ file, contentType, timestamp, mimeType, validUntil }) => {
+            try {
+              const result = await MajikSignature.signFile(file, key, {
+                contentType,
+                timestamp,
+                mimeType,
+                validUntil,
+              });
 
-    await this._keys.ensureUnlocked(id);
-    const key = this._keys.get(id);
-    if (!key) throw new Error(`Account not found in keystore: "${id}"`);
-    if (!key.hasSigningKeys) {
-      throw new Error(
-        `Account "${id}" has no signing keys. ` +
-          `Re-import via importAccountFromMnemonicBackup() to enable signing.`,
-      );
-    }
-
-    return Promise.all(
-      files.map(async ({ file, contentType, timestamp, mimeType }) => {
-        try {
-          const result = await MajikSignature.signFile(file, key, {
-            contentType,
-            timestamp,
-            mimeType,
-          });
-
-          return {
-            blob: result.blob,
-            signature: result.signature,
-            serialized: result.signature.serialize(),
-            handler: result.handler,
-            mimeType: result.mimeType,
-            error: null,
-          };
-        } catch (err) {
-          this._emit("error", err, { context: "batchSignFiles" });
-          return {
-            blob: null,
-            signature: null,
-            serialized: null,
-            handler: null,
-            mimeType: null,
-            error: err instanceof Error ? err : new Error(String(err)),
-          };
-        }
-      }),
+              return {
+                blob: result.blob,
+                signature: result.signature,
+                serialized: result.signature.serialize(),
+                handler: result.handler,
+                mimeType: result.mimeType,
+                error: null,
+              };
+            } catch (err) {
+              this._emit("error", err, { context: "batchSignFiles" });
+              return {
+                blob: null,
+                signature: null,
+                serialized: null,
+                handler: null,
+                mimeType: null,
+                error: err instanceof Error ? err : new Error(String(err)),
+              };
+            }
+          },
+        ),
+      ),
     );
   }
 
@@ -1240,8 +1262,13 @@ export class MajikUniversalIdClient extends MajikKeyClient<
    * > against a known contact fingerprint before trusting the result.
    *
    * @example — verify against a known contact
-   *   const result = await majik.verifyContent(docBytes, sig, { contactId: "contact_abc" });
-   *   if (result.valid) console.log("Authentic, signed by:", result.signerId);
+   *     const result = await majik.verifyContent(docBytes, sig, { contactId: "contact_abc" });
+   *     if (result.valid) console.log("Authentic, signed by:", result.signerId);
+   * @param content - Content to process, supplied as text or raw bytes.
+   * @param signature - Signature value, supplied as a MajikSignature, JSON representation, or serialized string as supported by the method.
+   * @param options - Optional operation-specific settings.
+   * @returns The result of the verify content operation (`Promise<VerificationResult>`).
+   * @throws {Error} When validation fails, required local data is unavailable, or the underlying operation cannot be completed.
    */
   async verifyContent(
     content: Uint8Array | string,
@@ -1251,11 +1278,17 @@ export class MajikUniversalIdClient extends MajikKeyClient<
       publicKeyBase64?: string;
       key?: MajikKey;
       expectedSignerId?: string;
+      now?: Date;
     },
   ): Promise<VerificationResult> {
     try {
       const publicKeys = await this._resolveSignerPublicKeys(options);
-      return this.verify(content, signature, publicKeys ?? undefined);
+      return this.verify(
+        content,
+        signature,
+        publicKeys ?? undefined,
+        options?.now,
+      );
     } catch (err) {
       this._emit("error", err, { context: "verifyContent" });
       throw err;
@@ -1266,17 +1299,23 @@ export class MajikUniversalIdClient extends MajikKeyClient<
    * Verify a file's embedded signature.
    *
    * @example — verify a signed PDF against a known contact
-   *   const result = await majik.verifyFile(signedPdf, { contactId: "contact_abc" });
-   *   if (result.valid) console.log("Verified:", result.signerId, result.timestamp);
+   *     const result = await majik.verifyFile(signedPdf, { contactId: "contact_abc" });
+   *     if (result.valid) console.log("Verified:", result.signerId, result.timestamp);
+   * @param file - Input file or Blob-like value to sign, verify, inspect, or transform.
+   * @param options - Optional operation-specific settings.
+   * @param source - History source recorded for the operation.
+   * @returns The result of the verify file operation (`Promise<VerificationResult & { handler?: string; reason?: string }>`).
+   * @throws {Error} When validation fails, required local data is unavailable, or the underlying operation cannot be completed.
    */
   async verifyFile(
-    file: Blob,
+    file: FileLike,
     options?: {
       contactId?: string;
       publicKeyBase64?: string;
       key?: MajikKey;
       expectedSignerId?: string;
       mimeType?: string;
+      now?: Date;
     },
   ): Promise<VerificationResult & { handler?: string; reason?: string }> {
     try {
@@ -1284,15 +1323,11 @@ export class MajikUniversalIdClient extends MajikKeyClient<
       let result: VerificationResult & { handler?: string; reason?: string };
 
       if (publicKeys) {
-        const results = await MajikSignature.verifyFile(
-          file,
-          publicKeys,
-          {
-            expectedSignerId: options?.expectedSignerId,
-            mimeType: options?.mimeType,
-          },
-          true,
-        );
+        const results = await MajikSignature.verifyFile(file, publicKeys, {
+          expectedSignerId: options?.expectedSignerId,
+          mimeType: options?.mimeType,
+          now: options?.now,
+        });
         result = results[0];
       } else {
         const extracted = await MajikSignature.extractFrom(file, {
@@ -1307,13 +1342,22 @@ export class MajikUniversalIdClient extends MajikKeyClient<
             reason: "No embedded signature found",
           };
         } else {
-          const firstSig = extracted[0];
+          // Honor expectedSignerId when resolving which embedded signature to
+          // check — previously this always fell back to extracted[0], so every
+          // iteration of a per-signer verify loop (verifySignersForFile) ended
+          // up re-checking the SAME first signer instead of each one in turn.
+          const targetSig = options?.expectedSignerId
+            ? (extracted.find((s) => s.signerId === options.expectedSignerId) ??
+              extracted[0])
+            : extracted[0];
+
           const results = await MajikSignature.verifyFile(
             file,
-            firstSig.extractPublicKeys(),
+            targetSig.extractPublicKeys(),
             {
-              expectedSignerId: firstSig.signerId,
+              expectedSignerId: targetSig.signerId,
               mimeType: options?.mimeType,
+              now: options?.now,
             },
           );
           result = results[0];
@@ -1331,22 +1375,25 @@ export class MajikUniversalIdClient extends MajikKeyClient<
    * Verify a file's detached signature.
    *
    * @example — verify a signed PDF's detached signature against a known contact
-   *   const result = await majik.verifyFileDetached(signedPdf, envelope, { contactId: "contact_abc" });
-   *   if (result.valid) console.log("Verified:", result.signerId, result.timestamp);
+   *     const result = await majik.verifyFileDetached(signedPdf, envelope, { contactId: "contact_abc" });
+   *     if (result.valid) console.log("Verified:", result.signerId, result.timestamp);
+   * @param file - Input file or Blob-like value to sign, verify, inspect, or transform.
+   * @param envelope - Detached envelope containing the signatures associated with the file.
+   * @param options - Optional operation-specific settings.
+   * @param source - History source recorded for the operation.
+   * @returns The result of the verify file detached operation (`Promise<VerificationResult & { handler?: string; reason?: string }>`).
+   * @throws {Error} When validation fails, required local data is unavailable, or the underlying operation cannot be completed.
    */
   async verifyFileDetached(
-    file: Blob,
-    envelope:
-      | MajikSignatureEnvelope
-      | MajikSignatureEnvelopeJSON
-      | Uint8Array
-      | Blob,
+    file: FileLike,
+    envelope: EnvelopeInput,
     options?: {
       contactId?: string;
       publicKeyBase64?: string;
       key?: MajikKey;
       expectedSignerId?: string;
       mimeType?: string;
+      now?: Date;
     },
   ): Promise<VerificationResult & { handler?: string; reason?: string }> {
     try {
@@ -1377,14 +1424,22 @@ export class MajikUniversalIdClient extends MajikKeyClient<
             reason: "Envelope contains no signatures",
           };
         } else {
-          const firstSig = MajikSignature.fromJSON(firstSigJson);
+          const targetSig = options?.expectedSignerId
+            ? (resolvedEnvelope.signatures.find(
+                (s) => s.signerId === options.expectedSignerId,
+              ) ?? resolvedEnvelope.signatures[0])
+            : resolvedEnvelope.signatures[0];
+
+          const parsedTargetSig = MajikSignature.fromJSON(targetSig);
+
           const results = await MajikSignature.verifyFileDetached(
             file,
             resolvedEnvelope,
-            firstSig.extractPublicKeys(),
+            parsedTargetSig.extractPublicKeys(),
             {
-              expectedSignerId: firstSig.signerId,
+              expectedSignerId: parsedTargetSig.signerId,
               mimeType: options?.mimeType,
+              now: options?.now,
             },
           );
           result = results[0];
@@ -1852,128 +1907,6 @@ export class MajikUniversalIdClient extends MajikKeyClient<
     }
   }
 
-  // ── STAMP (compression-resistant image signing) ───────────────────────────
-  //
-  // These methods delegate to MajikImageSignature, passing `MajikSignature`
-  // itself as the adapter — the same pattern used by signFile → MajikSignatureEmbed.
-  //
-  // The adapter is typed as MajikSignatureStaticAdapter (an interface defined
-  // in core/stamp/image-signature.ts) so no circular import is introduced:
-  //
-  //   majik-signature → core/stamp/image-signature → (adapter interface only)
-  //
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Sign an image with dual-layer embedding.
-   *
-   * Every signed image carries two independent proofs:
-   *
-   *   Layer 1 — Pixel rows appended at the bottom (+~6px height)
-   *     Full MajikSignature: Ed25519 + ML-DSA-87 (post-quantum)
-   *     Survives: direct sharing, email attachments, Slack, internal tools
-   *     Stripped by: platforms that crop/resize (Gmail, LinkedIn, Facebook)
-   *
-   *   Layer 2 — DCT coefficient steganography (invisible, no size change)
-   *     Ed25519-only stub + Reed-Solomon ECC (205 bytes)
-   *     Survives: Q70+ JPEG recompression, WebP conversion, platform uploads
-   *     Does not survive: screenshots, heavy crop, below-Q70 recompression
-   *
-   * Output is PNG by default. When uploaded to a platform, Layer 1 may be
-   * stripped but Layer 2 survives — verifyStamp() handles both automatically.
-   *
-   * Minimum image size: 600×600px (smaller images are padded with white).
-   *
-   * @param image    Any image format the browser supports (JPEG, PNG, WebP…)
-   * @param key      Unlocked MajikKey with signing keys
-   * @param options  Output MIME type, JPEG quality, timestamp override
-   * @returns        blob (signed image), stub (DCT layer metadata),
-   *                 fullEnvelope (complete MajikSignatureJSON for Layer 1)
-   *
-   * @example
-   *   const { blob, stub } = await MajikSignature.stampImage(imageBlob, key);
-   *   // blob  → upload or attach; visually identical to the original
-   *   // stub  → signerId, timestamp, pHash for display
-   */
-  static async stampImage(
-    image: Blob,
-    key: MajikKey,
-    options?: ImageSignOptions,
-  ): Promise<{
-    blob: Blob;
-    stub: ImageSignatureStub;
-    fullEnvelope: MajikSignatureJSON;
-  }> {
-    return MajikSignature.stampImage(image, key, options);
-  }
-
-  /**
-   * Verify a stamped image's embedded MajikImageSignature.
-   *
-   * Tries both layers automatically:
-   *   - Both present → both must pass (maximum integrity, post-quantum proof)
-   *   - Pixel row only → pixel row must pass (full Ed25519 + ML-DSA-87)
-   *   - DCT only → DCT must pass (Ed25519 fallback, typical after platform upload)
-   *   - Neither → invalid
-   *
-   * The `layer` field in the result communicates the trust level so callers
-   * can surface it in UI: 'both' > 'pixel-row' > 'dct-only'.
-   *
-   * @param image    The image to verify — may be platform-compressed
-   * @param options  hammingThreshold override (default 8 — strict)
-   *
-   * @example
-   *   const result = await MajikSignature.verifyStamp(imageBlob);
-   *   if (result.valid) {
-   *     console.log(`✓ Signed by ${result.signerId}`);
-   *     console.log(`  Verified via: ${result.layer}`);
-   *     // result.layer: 'both' | 'pixel-row' | 'dct-only'
-   *   }
-   */
-  static async verifyStamp(
-    image: Blob,
-    options?: { hammingThreshold?: number },
-  ): Promise<ImageVerificationResult> {
-    return MajikSignature.verifyStamp(image, options);
-  }
-
-  /**
-   * Inspect which stamp layers are present without verifying.
-   *
-   * Fast — useful for rendering a "Signed by X on Y" badge in a UI before
-   * committing to a full cryptographic verify call.
-   *
-   * Does NOT confirm the signatures are valid — call verifyStamp() for that.
-   *
-   * @example
-   *   const info = await MajikSignature.inspectStamp(imageBlob);
-   *   if (info.hasPixelRow) console.log('Full post-quantum proof present');
-   *   if (info.hasDct)      console.log('Compression-resistant stub present');
-   *   info.dctMeta?.signerId        // signer ID (unverified — display only)
-   *   info.pixelRowMeta?.timestamp  // timestamp (unverified — display only)
-   */
-  static async inspectStamp(image: Blob): Promise<{
-    hasPixelRow: boolean;
-    hasDct: boolean;
-    pixelRowMeta?: { signerId: string; timestamp: string };
-    dctMeta?: { signerId: string; timestamp: string; pHash: string };
-  }> {
-    return MajikSignature.inspectStamp(image);
-  }
-
-  /**
-   * Returns true if the image contains any MajikImageSignature layer.
-   *
-   * Does not verify — structural presence check only.
-   * Use verifyStamp() to confirm the signature is cryptographically valid.
-   *
-   * @example
-   *   if (await MajikSignature.isStamped(imageBlob)) { ... }
-   */
-  static async isStamped(image: Blob): Promise<boolean> {
-    return MajikSignature.isStamped(image);
-  }
-
   // ── Identity / Passphrase ─────────────────────────────────────────────────
 
   /**
@@ -1997,77 +1930,101 @@ export class MajikUniversalIdClient extends MajikKeyClient<
   // ── Private: Signer resolution ────────────────────────────────────────────
 
   /**
-   * Resolve MajikSignerPublicKeys from whichever signer hint was provided.
-   * Returns null if no hint was given (caller should fall back to self-reported keys).
    *
-   * Mirrors the _resolveRecipients / _resolveFileIdentity pattern used
-   * throughout MajikMessage — consistent account/contact resolution in one place.
+   * Callers pass { contactId, publicKeyBase64 } but the old resolver only read
+   * { contactID, address }. Result: contactId was silently ignored, the method
+   * returned null, and verifyContent/verifyFile/verifyFileDetached/batchVerifyFiles
+   * fell back to SELF-REPORTED envelope keys — i.e. "verify against a known
+   * contact" wasn't happening. This accepts both spellings.
+   *
+   * (Assumes publicKeyBase64 is the contact's MajikKeyAddress, as in
+   *  getContactByAddress — adjust if not.)
+   * @param options - Optional operation-specific settings.
+   * @returns The result of the resolve signer public keys operation (`Promise<MajikSignerPublicKeys | null>`).
+   * @throws {Error} When validation fails, required local data is unavailable, or the underlying operation cannot be completed.
    */
   private async _resolveSignerPublicKeys(options?: {
-    contactID?: string;
+    contactId?: string;
     address?: MajikKeyAddress;
+    publicKeyBase64?: string;
     key?: MajikKey;
     expectedSignerId?: string;
   }): Promise<MajikSignerPublicKeys | null> {
     if (!options) return null;
 
-    // Option A: caller passed a MajikKey instance directly
-    if (options.key) {
-      return MajikSignature.publicKeysFromMajikKey(options.key);
+    if (options.key) return MajikSignature.publicKeysFromMajikKey(options.key);
+    const contactId = options.contactId;
+    const address = options.address ?? options.publicKeyBase64;
+    let contact: MajikContact | undefined | null;
+
+    if (contactId) {
+      contact = this._contacts.getContact(contactId);
+      if (!contact) throw new Error(`No contact found for id "${contactId}"`);
+
+      const own = this._keys.get(contactId);
+      if (own?.hasSigningKeys)
+        return MajikSignature.publicKeysFromMajikKey(own);
+    } else if (address) {
+      contact = await this._contacts.getContactByAddress(address);
+      if (!contact)
+        throw new Error(`No contact found for public key "${address}"`);
+    } else {
+      return null;
     }
 
-    // Option B: contact ID looked up from the contact directory
-    if (options.contactID) {
-      const contact = this._contacts.getContact(options.contactID);
-      if (!contact) {
-        throw new Error(`No contact found for id "${options.contactID}"`);
-      }
+    if (!contact.edPublicKeyBase64 || !contact.mlDsaPublicKeyBase64) {
+      throw new Error(
+        `Contact "${contact.id}" has no signing public keys. ` +
+          `They may need to share an updated contact card.`,
+      );
+    }
 
-      // Own accounts are in the keystore — get their signing keys directly
-      const ownAccount = this.getOwnAccountById(options.contactID);
-      if (ownAccount) {
-        const key = this.keyManager.get(options.contactID);
-        if (key?.hasSigningKeys) {
-          return MajikSignature.publicKeysFromMajikKey(key);
-        }
-      }
+    return {
+      signerId: contact.fingerprint,
+      edPublicKey: base64ToUint8Array(contact.edPublicKeyBase64),
+      mlDsaPublicKey: base64ToUint8Array(contact.mlDsaPublicKeyBase64),
+    };
+  }
 
-      // External contact — resolve from their contact card fields
-      if (!contact.edPublicKeyBase64 || !contact.mlDsaPublicKeyBase64) {
+  /**
+   * One place for unlock -> signing-keys check -> one-time-unlock relock.
+   * New methods use this; you can migrate sign()/signFile()/seal() onto it later
+   * to delete the copy-pasted boilerplate.
+   * @param accountId - Account identifier to use. When omitted, the currently active account is used where supported.
+   * @param context - Value used by the _with signing key operation.
+   * @param fn - Value used by the _with signing key operation.
+   * @returns The result of the with signing key operation (`Promise<T>`).
+   * @throws {Error} When validation fails, required local data is unavailable, or the underlying operation cannot be completed.
+   */
+  private async _withSigningKey<T>(
+    accountId: string | undefined,
+    context: string,
+    fn: (key: MajikKey) => Promise<T>,
+  ): Promise<T> {
+    const id = accountId ?? this.getActiveAccount()?.id;
+    if (!id)
+      throw new Error("No active account — call setActiveAccount() first");
+
+    let key: MajikKey | undefined;
+    let shouldRelock = false;
+    try {
+      await this._keys.ensureUnlocked(id);
+      key = this._keys.get(id);
+      if (!key) throw new Error(`Account not found in keystore: "${id}"`);
+      if (!key.hasSigningKeys) {
         throw new Error(
-          `Contact "${options.contactID}" has no signing public keys. ` +
-            `They may need to share an updated contact card.`,
+          `Account "${id}" has no signing keys. ` +
+            `Re-import via importAccountFromMnemonicBackup() to enable signing.`,
         );
       }
-
-      return {
-        signerId: contact.fingerprint,
-        edPublicKey: base64ToUint8Array(contact.edPublicKeyBase64),
-        mlDsaPublicKey: base64ToUint8Array(contact.mlDsaPublicKeyBase64),
-      };
+      shouldRelock = !(await this.isOnetimeUnlockEnabled());
+      return await fn(key);
+    } catch (err) {
+      this._emit("error", err, { context });
+      throw err;
+    } finally {
+      if (shouldRelock) key?.lock();
     }
-
-    // Option C: raw base64 public key — look up via contact directory
-    if (options.address) {
-      const contact = await this._contacts.getContactByAddress(options.address);
-      if (!contact) {
-        throw new Error(`No contact found for public key "${options.address}"`);
-      }
-
-      if (!contact.edPublicKeyBase64 || !contact.mlDsaPublicKeyBase64) {
-        throw new Error(
-          `Contact for key "${options.address}" has no signing public keys.`,
-        );
-      }
-
-      return {
-        signerId: contact.fingerprint,
-        edPublicKey: base64ToUint8Array(contact.edPublicKeyBase64),
-        mlDsaPublicKey: base64ToUint8Array(contact.mlDsaPublicKeyBase64),
-      };
-    }
-
-    return null;
   }
 
   /**
