@@ -48,14 +48,17 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@majikah/majik-contact": "^0.0.6",
-    "@majikah/majik-key": "^0.6.0",
-    "@majikah/majik-key-client": "^0.5.1",
-    "@majikah/majik-signature": "^0.7.1",
-    "@majikah/majik-slink": "^0.2.4",
-    "@majikah/majik-universal-id": "^0.4.1"
+    "@majikah/majik-contact": "^0.2.0",
+    "@majikah/majik-key": "^1.0.2",
+    "@majikah/majik-key-client": "^0.7.0",
+    "@majikah/majik-signature": "^0.9.2",
+    "@majikah/majik-slink": "^0.3.0",
+    "@majikah/majik-universal-id": "^0.6.0",
+    "@stablelib/sha256": "^2.0.1",
+    "@thezelijah/majik-user": "^1.1.0",
+    "fflate": "^0.8.3"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3"
+    "@types/node": "^26.6.4"
   }
 }

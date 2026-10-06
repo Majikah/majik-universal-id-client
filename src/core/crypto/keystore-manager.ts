@@ -11,9 +11,9 @@
  *   - SQLiteKeystoreAdapter    (Tauri / desktop)
  */
 
-import { MajikKey, MajikKeyJSON, SerializedIdentity } from "@majikah/majik-key";
+import { KDF_VERSION, MajikKey, MajikKeyJSON, SerializedIdentity } from "@majikah/majik-key";
 
-import { KDF_VERSION } from "./constants";
+
 import { MajikKeyStorageAdapter } from "../storage/keystore/_types";
 import { InMemoryKeystoreAdapter } from "../storage/keystore/adapter-memory";
 

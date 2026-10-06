@@ -32,11 +32,6 @@ import {
 import { base64ToUint8Array } from "./core/utils/utilities";
 
 import { MAJIK_API_RESPONSE } from "./core/types";
-import {
-  ImageSignatureStub,
-  ImageSignOptions,
-  ImageVerificationResult,
-} from "@majikah/majik-signature/dist/core/stamp";
 
 import {
   CreateUniversalIDOptions,
@@ -51,7 +46,7 @@ import {
 } from "./core/contacts/majik-contact-manager";
 
 import { ClientStateManager } from "./core/client-state-manager";
-import { MajikIdentity } from "@majikah/majik-universal-id/dist/core/types";
+import { MajikIdentity } from "@majikah/majik-universal-id";
 import {
   MajikKeyClient,
   MajikKeyClientBaseEvents,
