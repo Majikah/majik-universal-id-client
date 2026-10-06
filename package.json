@@ -51,7 +51,7 @@
     "@majikah/majik-contact": "^0.2.0",
     "@majikah/majik-key": "^1.0.2",
     "@majikah/majik-key-client": "^0.7.0",
-    "@majikah/majik-signature": "^0.9.2",
+    "@majikah/majik-signature": "^0.9.4",
     "@majikah/majik-slink": "^0.3.0",
     "@majikah/majik-universal-id": "^0.6.0",
     "@stablelib/sha256": "^2.0.1",
