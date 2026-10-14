@@ -49,16 +49,16 @@
   },
   "dependencies": {
     "@majikah/majik-contact": "^0.2.0",
-    "@majikah/majik-key": "^1.0.2",
-    "@majikah/majik-key-client": "^0.7.0",
-    "@majikah/majik-signature": "^0.9.4",
-    "@majikah/majik-slink": "^0.3.0",
-    "@majikah/majik-universal-id": "^0.6.0",
+    "@majikah/majik-key": "^1.1.0",
+    "@majikah/majik-key-client": "^0.8.0",
+    "@majikah/majik-signature": "^1.0.0",
+    "@majikah/majik-slink": "^0.5.0",
+    "@majikah/majik-universal-id": "^0.7.1",
     "@stablelib/sha256": "^2.0.1",
     "@thezelijah/majik-user": "^1.1.0",
     "fflate": "^0.8.3"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4"
+    "@types/node": "^26.6.5"
   }
 }
